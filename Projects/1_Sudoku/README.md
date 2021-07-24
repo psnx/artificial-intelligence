@@ -64,3 +64,12 @@ Once your project passes all test cases on the Project Assistant, submit the zip
 **Note:** The `pygame` library is required to visualize your solution -- however, the `pygame` module can be troublesome to install and configure. It should be installed by default with the AIND conda environment, but it is not reliable across all operating systems or versions. Please refer to the pygame documentation [here](http://www.pygame.org/download.shtml), or discuss among your peers in the slack group if you need help.
 
 Running `python solution.py` will automatically attempt to visualize your solution, but you mustuse the provided `assign_value` function (defined in `utils.py`) to track the puzzle solution progress for reconstruction during visuzalization.
+
+## Installation of `conda` environment
+
+bash```
+$ conda update conda
+$ conda config --set channel_priority strict
+
+```
+
