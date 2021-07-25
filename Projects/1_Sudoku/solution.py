@@ -1,6 +1,6 @@
 
 from utils import *
-
+import collections
 
 row_units = [cross(r, cols) for r in rows]
 column_units = [cross(rows, c) for c in cols]
@@ -10,14 +10,10 @@ diagonal2_units = [i+j for (i,j) in zip(rows[::-1], cols)]
 diagonal_units = [u for u in [diagonal1_units, diagonal2_units]]
 
 
-print (f"{column_units=}")
-print (f"{diagonal_units=}")
-
 unitlist = row_units + column_units + square_units
 
 # TODO: Update the unit list to add the new diagonal units
 unitlist = unitlist + diagonal_units
-print(unitlist)
 
 # Must be called after all units (including diagonals) are added to the unitlist
 units = extract_units(unitlist, boxes)
@@ -62,7 +58,20 @@ def naked_twins(values):
     https://github.com/udacity/artificial-intelligence/blob/master/Projects/1_Sudoku/pseudocode.md
     """
     # TODO: Implement this function!
-    raise NotImplementedError
+    out = values.copy()
+    for unit in unitlist:
+        print(unit)
+        duals = [ out[v] for v in unit if len(out[v])==2]
+        twin_values = [ v for v, count in collections.Counter(duals).items() if count > 1 ]
+        if twin_values:
+            to_remove1 = twin_values[0][0]
+            to_remove2 = twin_values[0][1]
+            for box in unit:
+                if out[box] != twin_values[0]:
+                    out[box] = out[box].replace(to_remove1, '')
+                    out[box] = out[box].replace(to_remove2, '')
+
+    return out
 
 
 def eliminate(values):
@@ -171,11 +180,12 @@ def search(values):
     and extending it to call the naked twins strategy.
     """
     values = reduce_puzzle(values)
+    values = naked_twins(values)
     if values is False:
         return False
     if all(len(values[s]) == 1 for s in boxes):
         return values
-    
+
     n,s = min( (len(values[s]), s) for s in boxes if len(values[s]) > 1 )
     
     for value in values[s]:
