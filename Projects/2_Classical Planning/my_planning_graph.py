@@ -1,5 +1,8 @@
 
+from typing import AsyncContextManager
+from aimacode.logic import A
 from itertools import chain, combinations
+from sys import set_asyncgen_hooks, setdlopenflags
 from aimacode.planning import Action
 from aimacode.utils import expr
 
@@ -20,7 +23,8 @@ class ActionLayer(BaseActionLayer):
         layers.ActionNode
         """
         # TODO: implement this function
-        raise NotImplementedError
+        neg_effectsA = set([~effect for effect in  self.children[actionA]])
+        return neg_effectsA.intersection(self.children[actionB])
 
 
     def _interference(self, actionA, actionB):
@@ -34,8 +38,14 @@ class ActionLayer(BaseActionLayer):
         --------
         layers.ActionNode
         """
-        # TODO: implement this function
-        raise NotImplementedError
+        neg_precsA = set([~p for p in self.parents[actionA]])
+        neg_precsB = set([~p for p in self.parents[actionB]])
+        effectsA = self.children[actionA]
+        effectsB = self.children[actionB]
+
+        return len((effectsA & neg_precsB) | (effectsB & neg_precsA)) > 0
+
+        
 
     def _competing_needs(self, actionA, actionB):
         """ Return True if any preconditions of the two actions are pairwise mutex in the parent layer
@@ -49,9 +59,10 @@ class ActionLayer(BaseActionLayer):
         layers.ActionNode
         layers.BaseLayer.parent_layer
         """
-        # TODO: implement this function
-        raise NotImplementedError
-
+        precondsA = self.parents[actionA]
+        precondsB = self.parents[actionB]        
+        res = any([self.parent_layer.is_mutex(a,b) for a in precondsA for b in precondsB])
+        return res
 
 class LiteralLayer(BaseLiteralLayer):
 
@@ -65,14 +76,12 @@ class LiteralLayer(BaseLiteralLayer):
         See Also
         --------
         layers.BaseLayer.parent_layer
-        """
-        # TODO: implement this function
-        raise NotImplementedError
+        """        
+        return all([self.parent_layer.is_mutex(a,b) for a in self.parents[literalB] for b in self.parents[literalA]])
 
     def _negation(self, literalA, literalB):
         """ Return True if two literals are negations of each other """
-        # TODO: implement this function
-        raise NotImplementedError
+        return literalB == ~literalA
 
 
 class PlanningGraph:
