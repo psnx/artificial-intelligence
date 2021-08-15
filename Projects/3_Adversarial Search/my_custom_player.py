@@ -19,6 +19,43 @@ class CustomPlayer(DataPlayer):
       any pickleable object to the self.context attribute.
     **********************************************************************
     """
+    def score(self, state):
+        own_loc = state.locs[self.player_id]
+        opp_loc = state.locs[1 - self.player_id]
+        own_liberties = state.liberties(own_loc)
+        opp_liberties = state.liberties(opp_loc)
+        return len(own_liberties) - len(opp_liberties)
+
+    def min_value(self, state, depth):
+        """ Return the game state utility if the game is over,
+        otherwise return the minimum value over all legal successors
+        """
+        if state.terminal_test():
+            return state.utility(self.player_id)
+        if depth <=0 : return self.score(state)
+        v = float("inf")
+        for a in state.actions():
+            v = min(v, self.max_value(state.result(a), depth - 1))
+        return v
+
+
+    def max_value(self, state, depth):
+        """ Return the game state utility if the game is over,
+        otherwise return the maximum value over all legal successors
+        """
+        if state.terminal_test():
+            return state.utility(self.player_id)
+        if depth <=0 : return self.score(state)
+        v = float("-inf")
+        for a in state.actions():
+            v = max(v, self.min_value(state.result(a), depth - 1))
+        return v
+    
+
+    def minimax(self, state, depth):
+        return max(state.actions(), key=lambda s: self.min_value(state.result(s), depth-1))
+
+
     def get_action(self, state):
         """ Employ an adversarial search technique to choose an action
         available in the current state calls self.queue.put(ACTION) at least
@@ -43,4 +80,7 @@ class CustomPlayer(DataPlayer):
         #          call self.queue.put(ACTION) at least once before time expires
         #          (the timer is automatically managed for you)
         import random
-        self.queue.put(random.choice(state.actions()))
+
+        
+        self.queue.put(self.minimax(state, 2)) 
+        #self.queue.put(random.choice(state.actions()))
