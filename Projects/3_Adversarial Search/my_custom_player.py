@@ -1,6 +1,9 @@
 
+from isolation.isolation import S, Isolation
 from sample_players import DataPlayer
 
+#TODO: Remove this import for submission
+from isolation import DebugState
 
 class CustomPlayer(DataPlayer):
     """ Implement your own agent to play knight's Isolation
@@ -24,9 +27,28 @@ class CustomPlayer(DataPlayer):
         opp_loc = state.locs[1 - self.player_id]
         own_liberties = state.liberties(own_loc)
         opp_liberties = state.liberties(opp_loc)
+        #own_xy = DebugState.ind2xy(own_loc)
+        
+        #(num_of_my_moves - 2 * num_of_opponent_moves) + (num_of_blank_spaces / 2 + 2 * num_of_my_moves) / 13
+   
+
         return len(own_liberties) - len(opp_liberties)
 
-    def min_value(self, state, depth):
+    def max_value(self, state, depth, alpha, beta):
+        """ Return the game state utility if the game is over,
+        otherwise return the maximum value over all legal successors
+        """        
+        if state.terminal_test():
+            return state.utility(self.player_id)
+        if depth <=0 : return self.score(state)
+        v = float("-inf")
+        for a in state.actions():
+            v = max(v, self.min_value(state.result(a), depth - 1, alpha, beta))
+            if v >= beta : return v
+            alpha = max(alpha, v)
+        return v
+
+    def min_value(self, state, depth, alpha, beta):
         """ Return the game state utility if the game is over,
         otherwise return the minimum value over all legal successors
         """
@@ -35,26 +57,27 @@ class CustomPlayer(DataPlayer):
         if depth <=0 : return self.score(state)
         v = float("inf")
         for a in state.actions():
-            v = min(v, self.max_value(state.result(a), depth - 1))
+            v = min(v, self.max_value(state.result(a), depth - 1, alpha, beta))
+            if v <= alpha : return v
+            beta = min(beta, v)
         return v
 
+    #def minimax(self, state, depth):
+    #    return max(state.actions(), key=lambda s: self.min_value(state.result(s), depth-1))
 
-    def max_value(self, state, depth):
-        """ Return the game state utility if the game is over,
-        otherwise return the maximum value over all legal successors
-        """
-        if state.terminal_test():
-            return state.utility(self.player_id)
-        if depth <=0 : return self.score(state)
-        v = float("-inf")
+    def alpha_beta(self, state, depth):        
+        alpha = float("-inf")
+        beta = float("inf")  
+        best_score = float("-inf")
+        best_move = None      
+
         for a in state.actions():
-            v = max(v, self.min_value(state.result(a), depth - 1))
-        return v
-    
-
-    def minimax(self, state, depth):
-        return max(state.actions(), key=lambda s: self.min_value(state.result(s), depth-1))
-
+            v = self.min_value(state.result(a), depth, alpha, beta)
+            alpha = max(alpha, v)
+            if v > best_score:
+                best_score = v
+                best_move = a 
+        return best_move        
 
     def get_action(self, state):
         """ Employ an adversarial search technique to choose an action
@@ -81,6 +104,12 @@ class CustomPlayer(DataPlayer):
         #          (the timer is automatically managed for you)
         import random
 
+        depth_limit = 1    
+        #for depth in range(1, depth_limit+1):
+        #    best_move = self.alpha_beta(state, depth)
         
-        self.queue.put(self.minimax(state, 2)) 
-        #self.queue.put(random.choice(state.actions()))
+        #print('In get_action(), state received:')
+        #debug_board = DebugState.from_state(state)
+        #print(debug_board)
+        #print(state.ply_count)
+        self.queue.put(self.alpha_beta(state, 2))
