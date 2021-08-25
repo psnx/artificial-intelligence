@@ -1,8 +1,8 @@
 
 from collections import defaultdict
-from os import POSIX_FADV_DONTNEED
+from os import POSIX_FADV_DONTNEED, stat
 from pickle import READONLY_BUFFER
-from typing import DefaultDict
+from typing import DefaultDict, List
 from isolation.isolation import S, Isolation
 from sample_players import DataPlayer
 
@@ -10,98 +10,88 @@ from sample_players import DataPlayer
 from isolation import DebugState
 import random
 import math
-
-class Node:
-    def __init__(self, state) -> None:
-        self.children = set()
-        self.parent = None
-        self.visit_count = 0
-
-    def is_terminal(self, state):
-        return state.terminal_test()
-
-    def reward(self, state):
-        return state.utility()
+import copy
 
 class MCTS():
     def __init__(self, player_id) -> None:
         self.player_id = player_id
         self.q = defaultdict(int)
         self.n = defaultdict(int)
-        self.children = dict() # child relationships
+        self.children =  dict() # child relationships children[state] = [state, state2]
         self.exploration_weight = 1
-        self.parent = None # dict when not root
-        self.rewards = dict()
+        self.parent = dict() # dict when not root
+  
 
-    def unvisited_children(self, state):
-        self.children[state] = [(state.result(action)) for action in state.actions()]
-        return [a for a in self.children[state] if self.n[a] == 0]
-    
+    def find_an_unvisited_child(self, state):
+        return random.choice([state.result(a) for a in state.actions() if a not in self.children[state] ])
+        
+
+    def expand(self, state):
+        """adding a random new, unvisited and unrated child to the tree"""
+        new_state = self.find_an_unvisited_child(state)
+        self.children[state].append(new_state)
+        self.n[new_state] = 0
+        self.q[new_state] = 0
+        self.parent[new_state] = state
+        return new_state
+
+    def select(self, state):
+        pass
+
+    def rollout(self, state): #simulation
+        front_state = state ## copy maybe necessary?
+        path = []
+        while True:
+            path.append(front_state)            
+            if front_state.terminal_test():
+                return path
+            front_state = self.find_an_unvisited_child(front_state)
+
     def ucb(self, state):
         c = self.exploration_weight # to be tweaked?
-        if not self.parent : return float("inf")
-        return (self.q[state] + c * math.sqrt(2 * math.log(self.parent[state]) / self.n[state]))
-
-    # this may be is not efficient...
-    def find_children(self, state):
-        if state.termnal_test():
-            return None # we are at a leaf
-        children = []
-        for a in state.actions():
-            result = state.result(a)
-            self.parent[result] = state 
-            children.append(result)                
-        self.children[state] = children
-        return children
-
-    def random_child(self, state):
-        random.choice([state.result(a) for a in state.actions()])
-
-    def reward(self, state):
-        if state.terminal_test():
-            return state.utility(state.player_is)
-        print("we should not have been here")
-        return 0
+        #if not self.parent : return float("inf")
+        if self.n[state] == 0:
+            return float("-inf")
+        parent_n = self.n[self.parent[state]]        
+        return (self.q[state] + c * math.sqrt(2 * math.log(2*parent_n / self.n[state])))
+    
 
     def best_child(self, state):
         #Ranking children by policy 
+        print(f"from best child {self.n[state]=}")
         return max(self.children[state], key=self.ucb)  
 
-    def expand(self, state):
-        new_state = random.choice(self.unvisited_children(state))
-        self.children[new_state] = new_state
-        return new_state
 
-        
-    def move(self, state):
-        for c in state.actions():
-            if state.result(c).terminal_test():
-                if state.result(c).utility(self.player_id) == float("inf"):
-                    return c
+    def backpropagate(self, path, state):
+        final = path.pop()
+        self.q[final] = final.utility(state.player_id)
+        self.n[final] += 1
+        outcome = self.q[final]
+        while path:
+            up = path.pop()            
+            self.n[up] += 1
+            self.q[up] = outcome
 
-    def advance(self, state):
-        while not state.terminal_test():
-            if self.unvisited_children(state):
-                return self.expand(state)
-            state = self.best_child(state)
-            return state
+    def reset(self):
+        self.player_id = player_id
+        self.q = defaultdict(int)
+        self.n = defaultdict(int)
+        self.children =  dict() # child relationships children[state] = [state, state2]
+        self.exploration_weight = 1
 
-    def backpropagate(self, state):   
-        r = state.utility(self.player_id)
-        while state is not None:
-            self.n[state] += 1
-            #self.q[state] = ((node.n - 1)/node.n) * node.q + 1/node.n * r
-            self.q[state] = ((self.n[state]-1) / self.n[state]) + 1/self.n[state] * r
-            print(f"backpop: {state=} ")
-            state = self.parent[state] if self.parent else None
 
-    def main(self, state):
+    def run(self, state):
+        self.children[state] = []
         for _ in range(100):
-            next_state = self.advance(state)
-            self.rewards[next_state] = self.ucb(next_state)
-            self.backpropagate(state)
-        #node should be root now... TODO: check
-        return max([n for n in self.children[next_state]], key=lambda n: self.q[n])
+            if self.children[state]:
+                nxt = self.best_child(state)
+                self.expand(nxt)
+            self.expand(state)
+        result =  max([a for a in self.actions()], key=lambda x: self.q[x.result()] )
+        self.reset()
+        print(f"{self.q[state]=}")
+        return result
+        
                 
 class CustomPlayer(DataPlayer):
     """ Implement your own agent to play knight's Isolation
@@ -121,6 +111,9 @@ class CustomPlayer(DataPlayer):
     **********************************************************************
     """
       
+    def __init__(self, player_id):
+        super().__init__(player_id)
+        self.tree = MCTS(self.player_id)
 
     def get_action(self, state):
         """ Employ an adversarial search technique to choose an action
@@ -156,7 +149,6 @@ class CustomPlayer(DataPlayer):
         #print(debug_board)
         #print(state.ply_count)
         #move = (max(state.actions(), key=lambda n: self.score(n)))
-        tree = MCTS(self.player_id)
-        move = tree.main(state)
-        print(f"next move {move=}")
+        # remove state
+        move = self.tree.run(state)
         self.queue.put(move)
