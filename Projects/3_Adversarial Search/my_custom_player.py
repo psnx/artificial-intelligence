@@ -1,5 +1,6 @@
 
 from collections import defaultdict
+from io import UnsupportedOperation
 from logging import currentframe
 from os import POSIX_FADV_DONTNEED, stat
 from pickle import READONLY_BUFFER
@@ -74,19 +75,25 @@ class MCTS():
             self.q[state] += reward            
             state = self.parent_of[state]
 
+    def evaluate_by_simulation(self, from_nodes: list, number_of_sims: int):
+        for _ in range(number_of_sims):                                       
+            nxt = random.choice(from_nodes)  # choose a child for rollout
+            reward = self.rollout(nxt) # go to a terminal node and see if we win
+            self.update(reward, nxt) #updata the tree from root to state_to_explore
+            #print(f"{len(self.frontier)=}")
+
     def run(self, root):
         self._reset(root)
         state = root
-        for _ in range (3):
-            #check if there is a winning move            
+        for round in range(3) :
+            if  state.terminal_test():                
+                reward = 1 if state.utility(self.player_id) > 0 else -1
+                self.update(reward, state)
+                break
             self.expand(state) # add all children            
-            #print(f"{self.children[state]=}")
-            for _ in range(30):                                       
-                nxt = random.choice(self.children_of[state])  # choose a child for rollout
-                reward = self.rollout(nxt) # go to a terminal node and see if we win
-                self.update(reward, nxt) #updata the tree from root to state_to_explore
-            #print(f"{len(self.frontier)=}")
+            self.evaluate_by_simulation(self.children_of[state], 40)
             state = self.select_next_node() # etither the best or the least explored            
+
         return max(root.actions(), key= lambda a: self.q[root.result(a)])
 
                 
