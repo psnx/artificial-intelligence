@@ -4,6 +4,7 @@ from logging import currentframe
 from os import POSIX_FADV_DONTNEED, stat
 from pickle import READONLY_BUFFER
 from typing import DefaultDict, List
+from warnings import resetwarnings
 from isolation.isolation import S, Isolation
 from sample_players import DataPlayer
 
@@ -18,20 +19,30 @@ class MCTS():
         self.player_id = player_id
         self.q = defaultdict(int)
         self.n = defaultdict(int)
-        self.children = defaultdict(list) # child relationships children[state] = [state, state2]
+        self.children_of = defaultdict(list) # child relationships children[state] = [state, state2]
         self.frontier = set()
         self.exploration_weight = 1
-        self.parent = dict()
+        self.parent_of = dict()
         self.root = None 
+
+    def _reset(self, root):
+        self.root = root 
+        self.frontier.clear()
+        self.frontier.add(root)        
+        self.n[root] = 0
+        self.q[root] = 0        
+        self.parent_of.clear()
+        self.parent_of[root] = None
+        self.children_of.clear()
 
     def expand(self, state):
         """adding a random new, unvisited and unrated child to the tree"""
         assert(state in self.frontier)
         if state in self.frontier: self.frontier.remove(state)
-        for a in state.actions():
+        for idx, a in enumerate(state.actions()):
             child = state.result(a)
-            self.children[state].append(child)
-            self.parent[child] = state
+            self.children_of[state].append(child)
+            self.parent_of[child] = state
             self.n[child] = 0
             self.q[child] = 0
             self.frontier.add(child)
@@ -41,11 +52,11 @@ class MCTS():
         while True:            
             if front_state.terminal_test():
                 return 1 if front_state.utility(self.player_id) > 0 else -1
-            front_state = random.choice([front_state.result(a) for a in front_state.actions() if front_state.result(a) not in self.children.keys()])        
+            front_state = random.choice([front_state.result(a) for a in front_state.actions() if front_state.result(a) not in self.children_of.keys()])        
 
     def ucb(self, state):
         c = self.exploration_weight # to be tweaked?
-        parent_n = self.n[self.parent[state]] if self.parent[state] else 0        
+        parent_n = self.n[self.parent_of[state]] if self.parent_of[state] else 0        
         if self.n[state] == 0:
             return float("-inf")  # avoid unvetted moves
         return (self.q[state] + c * math.sqrt(2 * math.log(2*parent_n / self.n[state])))
@@ -61,21 +72,17 @@ class MCTS():
         while state:            
             self.n[state] += 1
             self.q[state] += reward            
-            state = self.parent[state]
-       
+            state = self.parent_of[state]
+
     def run(self, root):
-        self.root = root 
-        self.parent[root] = None
-        self.n[root] = 0
-        self.q[root] = 0
+        self._reset(root)
         state = root
-        self.frontier.add(root)
         for _ in range (3):
-            #check if there is a winning move
-            self.expand(state) # add all children
+            #check if there is a winning move            
+            self.expand(state) # add all children            
             #print(f"{self.children[state]=}")
-            for _ in range(10):                
-                nxt = random.choice(self.children[state])  # choose a child for rollout
+            for _ in range(30):                                       
+                nxt = random.choice(self.children_of[state])  # choose a child for rollout
                 reward = self.rollout(nxt) # go to a terminal node and see if we win
                 self.update(reward, nxt) #updata the tree from root to state_to_explore
             #print(f"{len(self.frontier)=}")
