@@ -1,5 +1,6 @@
 
 from collections import defaultdict
+from logging import currentframe
 from os import POSIX_FADV_DONTNEED, stat
 from pickle import READONLY_BUFFER
 from typing import DefaultDict, List
@@ -17,81 +18,70 @@ class MCTS():
         self.player_id = player_id
         self.q = defaultdict(int)
         self.n = defaultdict(int)
-        self.children =  dict() # child relationships children[state] = [state, state2]
+        self.children = defaultdict(list) # child relationships children[state] = [state, state2]
+        self.frontier = set()
         self.exploration_weight = 1
-        self.parent = dict() # dict when not root
-  
-
-    def find_an_unvisited_child(self, state):
-        return random.choice([state.result(a) for a in state.actions() if a not in self.children[state] ])
-        
+        self.parent = dict()
+        self.root = None 
 
     def expand(self, state):
         """adding a random new, unvisited and unrated child to the tree"""
-        new_state = self.find_an_unvisited_child(state)
-        self.children[state].append(new_state)
-        self.n[new_state] = 0
-        self.q[new_state] = 0
-        self.parent[new_state] = state
-        return new_state
-
-    def select(self, state):
-        pass
-
+        assert(state in self.frontier)
+        if state in self.frontier: self.frontier.remove(state)
+        for a in state.actions():
+            child = state.result(a)
+            self.children[state].append(child)
+            self.parent[child] = state
+            self.n[child] = 0
+            self.q[child] = 0
+            self.frontier.add(child)
+        
     def rollout(self, state): #simulation
-        front_state = state ## copy maybe necessary?
-        path = []
-        while True:
-            path.append(front_state)            
+        front_state = copy.copy(state) ## copy maybe necessary?
+        while True:            
             if front_state.terminal_test():
-                return path
-            front_state = self.find_an_unvisited_child(front_state)
+                return 1 if front_state.utility(self.player_id) > 0 else -1
+            front_state = random.choice([front_state.result(a) for a in front_state.actions() if front_state.result(a) not in self.children.keys()])        
 
     def ucb(self, state):
         c = self.exploration_weight # to be tweaked?
-        #if not self.parent : return float("inf")
+        parent_n = self.n[self.parent[state]] if self.parent[state] else 0        
         if self.n[state] == 0:
-            return float("-inf")
-        parent_n = self.n[self.parent[state]]        
+            return float("-inf")  # avoid unvetted moves
         return (self.q[state] + c * math.sqrt(2 * math.log(2*parent_n / self.n[state])))
     
 
-    def best_child(self, state):
-        #Ranking children by policy 
-        print(f"from best child {self.n[state]=}")
-        return max(self.children[state], key=self.ucb)  
+    def select_next_node(self):
+        #Ranking children by policy        
+        return max(self.frontier, key=self.ucb)  
 
 
-    def backpropagate(self, path, state):
-        final = path.pop()
-        self.q[final] = final.utility(state.player_id)
-        self.n[final] += 1
-        outcome = self.q[final]
-        while path:
-            up = path.pop()            
-            self.n[up] += 1
-            self.q[up] = outcome
+    def update(self, reward, explored_state):
+        state = copy.copy(explored_state)
+        while state:            
+            self.n[state] += 1
+            self.q[state] += reward            
+            state = self.parent[state]
+       
+    def run(self, root):
+        self.root = root 
+        self.parent[root] = None
+        self.n[root] = 0
+        self.q[root] = 0
+        state = root
+        self.frontier.add(root)
+        for _ in range (3):
+            #check if there is a winning move
+            self.expand(state) # add all children
+            #print(f"{self.children[state]=}")
+            for _ in range(10):                
+                nxt = random.choice(self.children[state])  # choose a child for rollout
+                reward = self.rollout(nxt) # go to a terminal node and see if we win
+                self.update(reward, nxt) #updata the tree from root to state_to_explore
+            #print(f"{len(self.frontier)=}")
+            state = self.select_next_node() # etither the best or the least explored            
+        return max(root.actions(), key= lambda a: self.q[root.result(a)])
 
-    def reset(self):
-        self.player_id = player_id
-        self.q = defaultdict(int)
-        self.n = defaultdict(int)
-        self.children =  dict() # child relationships children[state] = [state, state2]
-        self.exploration_weight = 1
-
-
-    def run(self, state):
-        self.children[state] = []
-        for _ in range(100):
-            if self.children[state]:
-                nxt = self.best_child(state)
-                self.expand(nxt)
-            self.expand(state)
-        result =  max([a for a in self.actions()], key=lambda x: self.q[x.result()] )
-        self.reset()
-        print(f"{self.q[state]=}")
-        return result
-        
                 
 class CustomPlayer(DataPlayer):
     """ Implement your own agent to play knight's Isolation
@@ -138,17 +128,6 @@ class CustomPlayer(DataPlayer):
         # EXAMPLE: choose a random move without any search--this function MUST
         #          call self.queue.put(ACTION) at least once before time expires
         #          (the timer is automatically managed for you)
-        import random
-
-        depth_limit = 1    
-        #for depth in range(1, depth_limit+1):
-        #    best_move = self.alpha_beta(state, depth)
         
-        #print('In get_action(), state received:')
-        #debug_board = DebugState.from_state(state)
-        #print(debug_board)
-        #print(state.ply_count)
-        #move = (max(state.actions(), key=lambda n: self.score(n)))
-        # remove state
         move = self.tree.run(state)
         self.queue.put(move)
