@@ -10,7 +10,7 @@ from isolation.isolation import S, Isolation
 from sample_players import DataPlayer
 
 #TODO: Remove this import for submission
-from isolation import DebugState
+#from isolation import DebugState
 import random
 import math
 import copy
@@ -22,15 +22,17 @@ class MCTS():
         self.n = defaultdict(int)
         self.children_of = defaultdict(list) # child relationships children[state] = [state, state2]
         self.frontier = set()
-        self.exploration_weight = 1
+        self.exploration_weight = 5
         self.parent_of = dict()
         self.root = None 
+        self.current_state = None
+
 
     def _reset(self, root):
         self.root = root 
         self.frontier.clear()
         self.frontier.add(root)        
-        self.n[root] = 0
+        self.n[root] = 1
         self.q[root] = 0        
         self.parent_of.clear()
         self.parent_of[root] = None
@@ -44,7 +46,7 @@ class MCTS():
             child = state.result(a)
             self.children_of[state].append(child)
             self.parent_of[child] = state
-            self.n[child] = 0
+            self.n[child] = 1
             self.q[child] = 0
             self.frontier.add(child)
         
@@ -58,10 +60,10 @@ class MCTS():
     def ucb(self, state):
         c = self.exploration_weight # to be tweaked?
         parent_n = self.n[self.parent_of[state]] if self.parent_of[state] else 0        
-        if self.n[state] == 0:
-            return float("-inf")  # avoid unvetted moves
-        return (self.q[state] + c * math.sqrt(2 * math.log(2*parent_n / self.n[state])))
-    
+        assert self.n[state] >0       
+        #return (self.q[state]/self.n[state] + 0.5*math.sqrt(math.log(self.n[self.root] / self.n[state])))
+        return (self.q[state]/self.n[state] + 1.41 * math.sqrt(math.log(self.n[self.root] / self.n[state])))
+        
 
     def select_next_node(self):
         #Ranking children by policy        
@@ -78,23 +80,25 @@ class MCTS():
     def evaluate_by_simulation(self, from_nodes: list, number_of_sims: int):
         for _ in range(number_of_sims):                                       
             nxt = random.choice(from_nodes)  # choose a child for rollout
+            #nxt = max(from_nodes, key=self.ucb)
             reward = self.rollout(nxt) # go to a terminal node and see if we win
             self.update(reward, nxt) #updata the tree from root to state_to_explore
-            #print(f"{len(self.frontier)=}")
 
-    def run(self, root):
+    def run(self, root):        
         self._reset(root)
-        state = root
-        for round in range(3) :
-            if  state.terminal_test():                
-                reward = 1 if state.utility(self.player_id) > 0 else -1
-                self.update(reward, state)
-                break
-            self.expand(state) # add all children            
-            self.evaluate_by_simulation(self.children_of[state], 40)
-            state = self.select_next_node() # etither the best or the least explored            
+        self.current_state = root
 
-        return max(root.actions(), key= lambda a: self.q[root.result(a)])
+    def get_next(self):
+        for round in range(30) :
+            if  self.current_state.terminal_test():                
+                reward = 1 if self.current_state.utility(self.player_id) > 0 else -1
+                self.update(reward, self.current_state)
+                break
+            self.expand(self.current_state) # add all children            
+            self.evaluate_by_simulation(self.children_of[self.current_state], 20)
+            self.current_state = self.select_next_node() # etither the best or the least explored
+            #print(f"yield: {round=}")
+            yield max(self.root.actions(), key= lambda a: self.q[self.root.result(a)])
 
                 
 class CustomPlayer(DataPlayer):
@@ -143,5 +147,16 @@ class CustomPlayer(DataPlayer):
         #          call self.queue.put(ACTION) at least once before time expires
         #          (the timer is automatically managed for you)
         
-        move = self.tree.run(state)
-        self.queue.put(move)
+        if state.ply_count < 2:
+            x = random.randint(3,6)
+            y = random.randint(3,6)
+            start_point = x*10 + y
+        
+            if start_point not in state.actions():
+                start_point += 1 # he was ther first: let's pick a central location from where he cannot block my subsequent move
+
+            self.queue.put(start_point)
+
+        self.tree.run(state)
+        for n in self.tree.get_next():                                    
+            self.queue.put(n)
