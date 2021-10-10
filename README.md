@@ -1,4 +1,6 @@
 # Artificial Intelligence Nanodegree Program Resources
+**Spoiler Alert**
+Some of the projects include a solution. 
 
 ## Classroom Exercises
 
